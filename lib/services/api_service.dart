@@ -1,0 +1,723 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/constants.dart';
+
+class ApiService {
+  static Map<String, String> get headers => {
+    "Accept": "application/json",
+    "ngrok-skip-browser-warning": "69420",
+  };
+
+  // --- Purani APIs (Don't touch) ---
+  static Future<Map<String, dynamic>?> fetchExpertProfile(int uid) async {
+    try {
+      final response = await http.get(Uri.parse("${AppConstants.baseUrl}/users/Currentuser?uid=$uid"), headers: headers);
+      return response.statusCode == 200 ? json.decode(response.body) : null;
+    } catch (e) { return null; }
+  }
+
+  // ApiService.dart mein ye method replace karein
+  static Future<List<dynamic>> fetchExpertSolutions(int eid) async {
+    try {
+      // Ye timestamp har bar UNIQUE request banaye ga taake purana data na aaye
+      final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final response = await http.get(
+          Uri.parse("${AppConstants.baseUrl}/VPS?v=$timestamp"), // 👈 Ye zaroori hai
+          headers: headers
+      );
+
+      if (response.statusCode == 200) {
+        final decodedData = json.decode(response.body);
+
+        if (decodedData is Map && decodedData.containsKey('records')) {
+          List<dynamic> allRecords = decodedData['records'];
+
+          // Filtering: Sirf is expert ke records
+          // .toString() use karein taake comparison error na aaye
+          return allRecords.where((record) =>
+          record['eid'].toString() == eid.toString() ||
+              record['expertId'].toString() == eid.toString()
+          ).toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // ApiService.dart mein add karein
+  static Future<List<dynamic>> fetchAllVehicles() async {
+    try {
+      // Apne backend ka route use karein jo saari gariyan deta hai
+      final url = "${AppConstants.baseUrl}/vehicles/getallvehicles";
+      final res = await http.get(Uri.parse(url), headers: headers);
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        // Backend se jo structure aa raha hai uske mutabiq (usually 'vehicles' key hoti hai)
+        return data['vehicles'] ?? [];
+      }
+      return [];
+    } catch (e) { return []; }
+  }
+
+  // ApiService.dart mein ye method aisa hona chahiye:
+  static Future<List<dynamic>> fetchAllProblems() async {
+    try {
+      final url = "${AppConstants.baseUrl}/problems/getallproblem";
+      final res = await http.get(Uri.parse(url), headers: headers);
+
+      if (res.statusCode == 200) {
+        final decodedData = json.decode(res.body);
+        // Browser mein "problems" key aa rahi hai, is liye yahan bhi wahi likhna hai
+        if (decodedData is Map && decodedData.containsKey('problems')) {
+          return decodedData['problems'] as List;
+        }
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+
+  static Future<List<dynamic>> fetchFilteredProblems(String category) async {
+    try {
+      final url = "${AppConstants.baseUrl}/problems/filter?category=$category";
+      final res = await http.get(Uri.parse(url), headers: headers);
+      if (res.statusCode == 200) {
+        final decodedData = json.decode(res.body);
+        if (decodedData is List) return decodedData;
+        if (decodedData is Map && decodedData.containsKey('\$values')) {
+          return decodedData['\$values'];
+        }
+      }
+      return [];
+    } catch (e) {
+      print("Error: $e");
+      return [];
+
+    }
+  }
+
+  // --- NEW: Upload Solution & Steps Method ---
+  static Future<bool> uploadExpertSolution({
+    required int expertId,
+    required int vid,
+    required int pid,
+    required String title,
+    required List<Map<String, dynamic>> steps,
+  }) async {
+    try {
+      // --- STEP 1: SOLUTION SAVE KARO ---
+      // Route: api/vehicles/{vid}/problems/{pid}/solutions?eid={eid}
+      final solUrl = "${AppConstants.baseUrl}/vehicles/$vid/problems/$pid/solutions?eid=$expertId";
+
+      final solRes = await http.post(
+        Uri.parse(solUrl),
+        headers: {"Content-Type": "application/json", ...headers},
+        body: jsonEncode({"stitle": title}),
+      );
+
+      if (solRes.statusCode == 201 || solRes.statusCode == 200) {
+        final solData = jsonDecode(solRes.body);
+        int newSid = solData['solutionId']; // Aapka backend 'solutionId' return kar raha hai
+
+        // --- STEP 2: SARE STEPS LOOP MEIN BHEJO ---
+        for (int i = 0; i < steps.length; i++) {
+          final stepUrl = "${AppConstants.baseUrl}/steps/add";
+          var request = http.MultipartRequest('POST', Uri.parse(stepUrl));
+          request.headers.addAll(headers);
+
+          // Aapke StepsController ki demand: sid, stepNo, stepDescription, stepImg
+          request.fields['sid'] = newSid.toString();
+          request.fields['stepNo'] = (i + 1).toString();
+          request.fields['stepDescription'] = steps[i]['controller'].text;
+
+          if (steps[i]['image'] != null) {
+            File imgFile = steps[i]['image'];
+            request.files.add(await http.MultipartFile.fromPath(
+              'stepImg', // Controller mein yahi naam hai
+              imgFile.path,
+            ));
+          }
+
+          var streamedRes = await request.send();
+          var stepRes = await http.Response.fromStream(streamedRes);
+
+          if (stepRes.statusCode != 200 && stepRes.statusCode != 201) {
+            print("Step ${i+1} failed: ${stepRes.body}");
+            return false; // Agar aik bhi step fail hua to ruk jayega
+          }
+        }
+        return true; // Sab theek ho gaya
+      }
+      return false;
+    } catch (e) {
+      print("Main Upload Error: $e");
+      return false;
+    }
+  }
+
+
+  static Future<bool> addVehicle(Map<String, dynamic> carData) async {
+    try {
+      final url = "${AppConstants.baseUrl}/vehicles/addvehicle";
+      final Map<String, dynamic> formattedData = {
+        "make": carData['vmake'],    // Database column name
+        "model": carData['vmodel'],  // Database column name
+        "variant": carData['vvariant'],
+        "year": carData['vyear'],
+        "status": carData['vstatus'], // "pending" ya "Approved"
+      };
+
+      final res = await http.post(Uri.parse(url), headers: {"Content-Type": "application/json", ...headers}, body: jsonEncode(formattedData));
+      return res.statusCode == 201 || res.statusCode == 200;
+    } catch (e) { return false; }
+  }
+
+  // 2. Fetch Pending Requests (Jinka status 0 hai)
+  static Future<List<dynamic>> fetchPendingVehicles() async {
+    try {
+      // Aapke naye controller ka route 'pending' hai
+      final url = "${AppConstants.baseUrl}/vehicles/pending";
+      final res = await http.get(Uri.parse(url), headers: headers);
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        // Aapka backend { vehicles: [...] } bhej raha hai
+        return data['vehicles'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      print("Pending Fetch Error: $e");
+      return [];
+    }
+  }
+  static Future<bool> approveVehicle(int vid) async {
+    try {
+      // Aapke naye controller mein route GET hai: /approve?vid=5
+      final url = "${AppConstants.baseUrl}/vehicles/approve?vid=$vid";
+      final res = await http.get(Uri.parse(url), headers: headers);
+      return res.statusCode == 200;
+    } catch (e) { return false; }
+  }
+  static Future<bool> deleteVehicle(int vid) async {
+    try {
+      // Route: api/vehicles/{vid}
+      final url = "${AppConstants.baseUrl}/vehicles/$vid";
+      final res = await http.delete(Uri.parse(url), headers: headers);
+      return res.statusCode == 200;
+    } catch (e) { return false; }
+  }
+
+  // 3. Update Status (Tick = 1, Cross = Delete)
+  static Future<bool> updateVehicleStatus(int vid, int status) async {
+    try {
+      if (status == -1) { // Cross button logic
+        final res = await http.delete(Uri.parse("${AppConstants.baseUrl}/vehicles/delete/$vid"), headers: headers);
+        return res.statusCode == 200;
+      } else { // Tick button logic
+        final res = await http.put(
+            Uri.parse("${AppConstants.baseUrl}/vehicles/updatestatus/$vid?status=$status"),
+            headers: headers
+        );
+        return res.statusCode == 200;
+      }
+    } catch (e) { return false; }
+  }
+
+  // ApiService.dart mein ye copy kar lo
+  static Future<bool> addProblem(Map<String, dynamic> data) async {
+    try {
+      final url = Uri.parse("${AppConstants.baseUrl}/problems/addprob");
+
+      // Backend ke field names ke saath exact match
+      final body = jsonEncode({
+        "ptitle": data['title'],
+        "pdescription": data['description'],
+        "ptype": data['category'].toString().toLowerCase(),
+        "type": data['type'],
+        "uid": data['uid']
+      });
+
+      final res = await http.post(
+        url,
+        headers: {"Content-Type": "application/json", ...headers},
+        body: body,
+      );
+
+      return res.statusCode == 201 || res.statusCode == 200;
+    } catch (e) {
+      print("Error: $e");
+      return false;
+    }
+  }
+
+  static Future<bool> updateProblem(Map<String, dynamic> problemData) async {
+    try {
+      int pid = problemData['pid']; // Object se ID nikalo
+      final url = "${AppConstants.baseUrl}/problems/$pid"; // Yeh route tumhare C# se match karega
+
+      final res = await http.put(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(problemData), // Pura object bhejo
+      );
+
+      return res.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> deleteProblem(int pid) async {
+    try {
+      // Tumhare backend route {pid:int} se match kar raha hai
+      final url = Uri.parse("${AppConstants.baseUrl}/problems/$pid");
+
+      final res = await http.delete(
+          url,
+          headers: headers
+      );
+
+      // Status 200 aana chahiye
+      return res.statusCode == 200;
+    } catch (e) {
+      print("Delete Error: $e");
+      return false;
+    }
+
+  }
+//----------------------------------------------update profile---//
+// --- Profile Fetch ---
+  static Future<Map<String, dynamic>?> getExpertProfile() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      // 🔥 Yahan 'userId' use karein (kyunke login mein humne userId save ki thi)
+      int? uid = prefs.getInt('userId');
+
+      final url = "${AppConstants.baseUrl}/users/Currentuser?uid=$uid";
+      print("DEBUG: Fetching profile for UID: $uid"); // Console mein check karne ke liye
+
+      final res = await http.get(Uri.parse(url), headers: headers);
+      if (res.statusCode == 200) {
+        return json.decode(res.body);
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+  // --- Profile Update (With Image) ---
+  static Future<List<dynamic>> fetchSolutionsByVehicleAndProblem(int vid, int pid) async {
+    try {
+      // Ye wala URL Expert ka naam (ExpertName) bhejta hai
+      final url = "${AppConstants.baseUrl}/vehicles/$vid/problems/$pid/solutions";
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Backend se 'solutions' ki key mein data aa raha hai
+        List<dynamic> solutions = data['solutions'] ?? data['Solutions'] ?? [];
+
+        print("Data mil gaya: ${solutions.length} records");
+        return solutions;
+      }
+      return [];
+    } catch (e) {
+      print("Error: $e");
+      return [];
+    }
+  }
+
+  // ApiService.dart mein ye add karein
+  static Future<List<dynamic>> fetchStepsBySolutionId(int sid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/steps/$sid";
+      final res = await http.get(Uri.parse(url), headers: headers);
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        // Backend response mein 'steps' naam ki key hai
+        return data['steps'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      print("Error fetching steps: $e");
+      return [];
+    }
+  }
+
+  // --- Profile Update (With Image) ---
+  // --- Profile Update (With Image) ---
+  static Future<bool> updateExpertProfile(Map<String, dynamic> data, File? image) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      // 🔥 FIX: 'saved_uid' ko 'userId' se badal diya kyunke login mein 'userId' save ho raha hai
+      int? uid = prefs.getInt('userId');
+
+      final url = "${AppConstants.baseUrl}/users/updateexpertprofile";
+      var request = http.MultipartRequest('POST', Uri.parse(url));
+      request.headers.addAll(headers);
+
+      request.fields['uid'] = uid.toString();
+      request.fields['username'] = data['username'] ?? "";
+      request.fields['oldpassword'] = data['oldPass'] ?? "";
+      request.fields['newpassword'] = data['newPass'] ?? "";
+      request.fields['category'] = data['category'] ?? "Electrical";
+
+      if (image != null) {
+        request.files.add(await http.MultipartFile.fromPath('profileImage', image.path));
+      }
+
+      var streamedRes = await request.send();
+      var res = await http.Response.fromStream(streamedRes);
+
+      print("DEBUG: Update Response Code: ${res.statusCode} for UID: $uid");
+      return res.statusCode == 200;
+    } catch (e) {
+      print("DEBUG: Exception in updateExpertProfile: $e");
+      return false;
+    }
+  }
+
+
+
+  static Future<List<dynamic>> getAllUsers() async {
+    try {
+      // 🚩 URL FIX: Controller ka RoutePrefix + Route name
+      final url = "${AppConstants.baseUrl}/users/getallusers";
+
+      print("Fetching from: $url");
+      final response = await http.get(
+          Uri.parse(url),
+          headers: headers
+      );
+
+      print("Status: ${response.statusCode}");
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Aapke C# Controller mein direct list return ho rahi hai,
+        // is liye '$values' ki zaroorat nahi parni chahiye, lekin safety ke liye dono check rakhin
+        return data is List ? data : (data['\$values'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      print("Error: $e");
+      return [];
+    }
+  }
+  static String getFullImageUrl(String? path) {
+    if (path == null || path.isEmpty) return "";
+
+    // Base URL se /api hatane ke liye (iOS wala logic)
+    String baseUrl = AppConstants.baseUrl;
+    if (baseUrl.endsWith("/api")) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+    } else if (baseUrl.endsWith("/api/")) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 5);
+    }
+
+    // Agar path ke shuru mein / nahi hai to laga do
+    String cleanPath = path.replaceAll(r'\', '/');
+    if (!cleanPath.startsWith('/')) {
+      cleanPath = '/$cleanPath';
+    }
+
+    return baseUrl + cleanPath;
+  }
+  // 1. Approved Experts Fetch karne ke liye
+  static Future<List<dynamic>> getApprovedExperts() async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/getapprovedexperts";
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode == 200) {
+        var data = json.decode(response.body);
+        // Agar backend direct list de raha hai to theek, warna $values check karo
+        return data is List ? data : (data['\$values'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // 2. Pending Experts Fetch karne ke liye (Approval ke liye wait kar rahe hain)
+  static Future<List<dynamic>> getPendingExperts() async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/getpendingexperts";
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode == 200) {
+        var data = json.decode(response.body);
+        return data is List ? data : (data['\$values'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // 3. Expert ko Approve karne ke liye (PUT method)
+  static Future<bool> approveExpert(int uid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/approveexpert/$uid";
+      final response = await http.put(Uri.parse(url), headers: headers);
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 4. Admin panel se direct naya Expert add karne ke liye
+  static Future<bool> addExpertAdmin(String name, String password, String category) async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/addexpertadmin";
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json", ...headers},
+        body: json.encode({
+          "username": name,
+          "password": password,
+          "category": category,
+        }),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 5. User/Expert ko delete karne ke liye
+  static Future<bool> deleteUser(int uid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/$uid";
+      final response = await http.delete(Uri.parse(url), headers: headers);
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+  // 1. User ki Default Vehicle ID lane ke liye (iOS Flow)
+  // Purane getDefaultVehicleId ko is se replace kar dein
+  static Future<Map<String, dynamic>?> getUserProfile(int uid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/Currentuser?uid=$uid";
+      final res = await http.get(Uri.parse(url), headers: headers);
+      if (res.statusCode == 200) {
+        return json.decode(res.body);
+      }
+      return null;
+    } catch (e) {
+      print("Profile Fetch Error: $e");
+      return null;
+    }
+  }
+
+  // 2. User ki saari gariyan lane ke liye
+  static Future<List<dynamic>> getUserVehicles(int uid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/vps/user-vehicles/$uid";
+      final res = await http.get(Uri.parse(url), headers: headers);
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        // Agar backend direct list de raha hai to theek, warna key check karein
+        if (data is List) return data;
+        return data['vehicles'] ?? data['\$values'] ?? [];
+      }
+      return [];
+    } catch (e) { return []; }
+  }
+
+
+
+  // User ki car save karne ke liye (vid = Vehicle ID)
+  // Agar POST kaam nahi kar raha, toh isse replace karke check karein
+// 'void' ki jagah 'Future<bool>' likhein
+  static Future<bool> addUserVehicle({
+    required int uid,
+    required int vid,
+    required bool isDefault,
+  }) async {
+    try {
+      final String url = "${AppConstants.baseUrl}/users/$uid/vehicles";
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420",
+        },
+        body: jsonEncode({
+          "vid": vid,
+          "isDefault": isDefault,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        print("Gaari add ho gayi!");
+        return true; // <--- Yeh zaroori hai
+      } else {
+        print("Backend Error: ${response.statusCode}");
+        return false; // <--- Yeh zaroori hai
+      }
+    } catch (e) {
+      print("Connection Error: $e");
+      return false; // <--- Yeh zaroori hai
+    }
+  }
+
+  static Future<bool> updateProfile({
+    required int uid,
+    required String username,
+    String? oldPass,
+    String? newPass,
+    File? image,
+  }) async {
+    try {
+      // 1. URL wahi use karein jo aapke backend mein [Route("updateexpertprofile")] hai
+      final url = "${AppConstants.baseUrl}/users/updateexpertprofile";
+
+      var request = http.MultipartRequest('POST', Uri.parse(url));
+      request.headers.addAll(headers);
+
+      // 2. Kye names exact C# controller wale hone chahiye
+      request.fields['uid'] = uid.toString();
+      request.fields['username'] = username;
+      request.fields['oldpassword'] = oldPass ?? ""; // C# mein 'oldpassword' lowercase hai
+      request.fields['newpassword'] = newPass ?? ""; // C# mein 'newpassword' lowercase hai
+      request.fields['category'] = "Electrical";    // Default category bhejni lazmi hai kyunke backend parse kar raha hai
+
+      // 3. Image handle karein
+      if (image != null) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'profileImage', // Backend IFormFile ka naam
+          image.path,
+        ));
+      }
+
+
+      var streamedRes = await request.send();
+      var res = await http.Response.fromStream(streamedRes);
+
+      print("DEBUG: Status Code: ${res.statusCode}");
+      print("DEBUG: Response Body: ${res.body}");
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print("Error updating profile: $e");
+      return false;
+    }
+  }
+// 1. Solution ki detail aur steps fetch karna (iOS: loadInitialData)
+  static Future<Map<String, dynamic>?> fetchSolutionDetails(int sid) async {
+    try {
+      // API Route: GET api/solutions/{sid}
+      final response = await http.get(Uri.parse('${AppConstants.baseUrl}/solutions/$sid'), headers: headers);
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+    } catch (e) {
+      print("Fetch Solution Detail Error: $e");
+    }
+    return null;
+  }
+
+  // 2. Solution ka Title update karna (iOS: updateCompleteSolution -> Step 1)
+  // 1. Purana Step update karna (Description aur StepNo)
+  static Future<bool> updateStep({required int stepId, required String description, int stepNo = 1}) async {
+    try {
+      final url = Uri.parse('${AppConstants.baseUrl}/steps/$stepId');
+      final response = await http.put(
+        url,
+        headers: {"Content-Type": "application/json", ...headers},
+        body: json.encode({
+          "stepid": stepId,
+          "stepDescription": description,
+          "stepNo": stepNo,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+// 2. Step ki Image update karna (Specific Route)
+  static Future<bool> updateStepImage(int stepId, File imageFile, {String? description, int? stepNo}) async {
+    try {
+      final url = Uri.parse('${AppConstants.baseUrl}/steps/$stepId/image');
+      var request = http.MultipartRequest('PUT', url);
+      request.headers.addAll(headers);
+
+      // Image file add karein
+      request.files.add(await http.MultipartFile.fromPath('stepImg', imageFile.path));
+
+      // Agar sath mein description ya stepNo bhi bhejna ho (form-data mein)
+      if (description != null) request.fields['stepDescription'] = description;
+      if (stepNo != null) request.fields['stepNo'] = stepNo.toString();
+
+      var streamedRes = await request.send();
+      return streamedRes.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+// 3. Naya Step add karna (iOS: uploadstepwithimage wala kaam)
+  static Future<bool> uploadNewStep({required int sid, required int stepNo, required String description, required File imageFile}) async {
+    try {
+      final url = Uri.parse('${AppConstants.baseUrl}/steps/add');
+      var request = http.MultipartRequest('POST', url);
+      request.headers.addAll(headers);
+
+      request.fields['sid'] = sid.toString();
+      request.fields['stepNo'] = stepNo.toString();
+      request.fields['stepDescription'] = description;
+
+      request.files.add(await http.MultipartFile.fromPath('stepImg', imageFile.path));
+
+      var streamedRes = await request.send();
+      return streamedRes.statusCode == 200 || streamedRes.statusCode == 201;
+    } catch (e) {
+      return false;
+    }
+  }
+  // ApiService.dart mein isay add karein
+  static Future<bool> updateSolutionTitle(int sid, String title) async {
+    try {
+      // Backend route: api/solutions/{sid}
+      final url = Uri.parse('${AppConstants.baseUrl}/solutions/$sid');
+
+      final response = await http.put(
+        url,
+        headers: {
+          "Content-Type": "application/json",
+          ...headers // ngrok headers include karne ke liye
+        },
+        body: json.encode({
+          "sid": sid,
+          "stitle": title // Backend key 'stitle' check karlein agar title hai toh wo likhein
+        }),
+      );
+
+      print("Title Update Status: ${response.statusCode}");
+      return response.statusCode == 200;
+    } catch (e) {
+      print("Error updating solution title: $e");
+      return false;
+    }
+  }
+
+
+
+  }
+
+
+
+
