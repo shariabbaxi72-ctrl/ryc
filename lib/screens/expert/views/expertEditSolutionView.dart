@@ -69,6 +69,39 @@ class _EditSolutionViewState extends State<EditSolutionView> {
     }
   }
 
+  Future<void> deleteStepLogic(int index) async {
+    var step = steps[index];
+
+    // Case 1: Agar step pehle se database mein hai (Purana Step)
+    if (step.stepId != null && step.stepId != 0) {
+      setState(() => isLoading = true);
+
+      bool success = await ApiService.deleteStep(step.stepId!);
+
+      if (success) {
+        _removeAndReorderUI(index);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Step deleted from server")));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to delete step")));
+      }
+
+      setState(() => isLoading = false);
+    }
+    // Case 2: Agar naya add kiya hua step hai (Abhi save nahi hua)
+    else {
+      _removeAndReorderUI(index);
+    }
+  }
+
+  void _removeAndReorderUI(int index) {
+    setState(() {
+      steps.removeAt(index);
+      // iOS ki tarah numbering reset karein
+      for (int i = 0; i < steps.length; i++) {
+        steps[i].stepNo = i + 1;
+      }
+    });
+  }
   // --- MAIN UPDATE FUNCTION (SMART LOGIC) ---
   Future<void> updateEverything() async {
     if (_titleController.text.isEmpty) {
@@ -184,11 +217,10 @@ class _EditSolutionViewState extends State<EditSolutionView> {
                         children: [
                           Text("STEP ${index + 1}",
                               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-                          if (step.stepId == null)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.red),
-                              onPressed: () => setState(() => steps.removeAt(index)),
-                            )
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            onPressed: () => deleteStepLogic(index), // Naya function call karein
+                          )
                         ],
                       ),
                       const SizedBox(height: 10),

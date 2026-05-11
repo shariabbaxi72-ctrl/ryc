@@ -105,8 +105,8 @@ class _DashboardViewState extends State<DashboardView> {
 
           const SizedBox(height: 30),
           _categorySection("Headlight", ["Headlight Off", "Headlight Low", "Headlight Blinking"], _headlightCtrl),
-          _categorySection("Horn", ["Horn Not Working", " Horn Low Sound"], _hornCtrl),
-          _categorySection("Indicator", ["Indicator Not Working", "One Side Indicator Not work"], _indicatorCtrl),
+          _categorySection("Horn", ["Horn Not Working", "Horn Low Sound"], _hornCtrl),
+          _categorySection("Indicator", ["Indicator Not Working", "One Side Indicator Not Working"], _indicatorCtrl),
 
           const SizedBox(height: 30),
           _filledBtn("Find Expert", () {

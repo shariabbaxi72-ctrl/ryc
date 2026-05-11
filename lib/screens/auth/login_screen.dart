@@ -104,13 +104,13 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: Padding(
-        padding: const EdgeInsets.all(35),
+        padding: const EdgeInsets.only(left: 35,right: 35,bottom: 35,top: 165),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 40),
-              const Text("Welcome", style: TextStyle(fontSize: 40, color: Color.fromARGB(255, 5, 54, 97), fontWeight: FontWeight.bold)),
+              const Text("Welcome", style: TextStyle(fontSize: 50, color: Color.fromARGB(255, 5, 54, 97), fontWeight: FontWeight.bold)),
               const SizedBox(height: 40),
               TextField(controller: usernameController, decoration: InputDecoration(hintText: " Enter username", prefixIcon: const Icon(Icons.person), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)))),
               const SizedBox(height: 15),

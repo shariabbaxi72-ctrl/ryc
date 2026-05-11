@@ -19,6 +19,12 @@ class _ExpertDashboardViewState extends State<ExpertDashboardView> {
   bool isLoading = true;
   List<dynamic> solutions = [];
 
+  // Performance data ke liye naye variables
+  double overallRating = 0.0;
+  int totalReviews = 0;
+  int totalSolutionsCount = 0;
+
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +44,7 @@ class _ExpertDashboardViewState extends State<ExpertDashboardView> {
       if (uId != 0) {
         var profileData = await ApiService.fetchExpertProfile(uId);
         var solutionsData = await ApiService.fetchExpertSolutions(eId);
+        var perfData = await ApiService.fetchExpertPerformance(uId);
 
         if (mounted) {
           setState(() {
@@ -46,6 +53,14 @@ class _ExpertDashboardViewState extends State<ExpertDashboardView> {
               cat = profileData['category']?.toString() ?? "No Category";
               prefs.setString('saved_upicture', profileData['upicture']?.toString() ?? "");
             }
+            if (perfData != null) {
+              print("DEBUG: Raw Perf Data from Backend: $perfData");
+              overallRating = double.tryParse(perfData['overallRating']?.toString() ?? '0.0') ?? 0.0;
+              totalReviews = int.tryParse(perfData['totalReviews']?.toString() ?? '0') ?? 0;
+              // Key name should be 'totalSolutions' as per your iOS Swift code
+              totalSolutionsCount = int.tryParse(perfData['totalSolutions']?.toString() ?? '0') ?? 0;
+            }
+
             solutions = solutionsData ?? [];
             isLoading = false; // ✅ Data mil gaya, loading stop
           });
@@ -76,6 +91,61 @@ class _ExpertDashboardViewState extends State<ExpertDashboardView> {
           const SizedBox(height: 30),
           const Align(alignment: Alignment.centerLeft, child: Text("List Of Solutions", style: TextStyle(fontWeight: FontWeight.bold))),
           const SizedBox(height: 10),
+          // 👇 EXPERT PERFORMANCE CARD (iOS Style)
+          Container(
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Overall Performance", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            // 5 Stars System
+                            ...List.generate(5, (index) {
+                              return Icon(
+                                index < overallRating.floor() ? Icons.star : (index < overallRating ? Icons.star_half : Icons.star_border),
+                                color: Colors.orangeAccent,
+                                size: 18,
+                              );
+                            }),
+                            const SizedBox(width: 5),
+                            Text(overallRating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        const Text("Solutions", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                        Text("$totalSolutionsCount", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1B2E4B))),
+                      ],
+                    ),
+                  ],
+                ),
+                const Divider(height: 20),
+                Row(
+                  children: [
+                    const Icon(Icons.people, size: 14, color: Colors.grey),
+                    const SizedBox(width: 5),
+                    Text("Based on $totalReviews user reviews", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
           Expanded(
             child: RefreshIndicator(
               onRefresh: loadExpertData,

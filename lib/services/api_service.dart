@@ -104,6 +104,7 @@ class ApiService {
   }
 
   // --- NEW: Upload Solution & Steps Method ---
+  // --- NEW: Upload Solution & Steps Method (iOS Synchronized) ---
   static Future<bool> uploadExpertSolution({
     required int expertId,
     required int vid,
@@ -112,7 +113,9 @@ class ApiService {
     required List<Map<String, dynamic>> steps,
   }) async {
     try {
-      // --- STEP 1: SOLUTION SAVE KARO ---
+      // ==========================================
+      // STEP 1: CREATE CORE SOLUTION ROW
+      // ==========================================
       // Route: api/vehicles/{vid}/problems/{pid}/solutions?eid={eid}
       final solUrl = "${AppConstants.baseUrl}/vehicles/$vid/problems/$pid/solutions?eid=$expertId";
 
@@ -124,44 +127,68 @@ class ApiService {
 
       if (solRes.statusCode == 201 || solRes.statusCode == 200) {
         final solData = jsonDecode(solRes.body);
-        int newSid = solData['solutionId']; // Aapka backend 'solutionId' return kar raha hai
+        int newSid = solData['solutionId']; // Response se generated ID mili
 
-        // --- STEP 2: SARE STEPS LOOP MEIN BHEJO ---
-        for (int i = 0; i < steps.length; i++) {
-          final stepUrl = "${AppConstants.baseUrl}/steps/add";
-          var request = http.MultipartRequest('POST', Uri.parse(stepUrl));
-          request.headers.addAll(headers);
+        // ==========================================
+        // STEP 2: LINK EXPERT TO SOLUTION (Junction Table: ExpertSolutions)
+        // ==========================================
+        // iOS target: api/expertsolutions?eid={eid}&sid={sid}
+        final linkUrl = "${AppConstants.baseUrl}/expertsolutions?eid=$expertId&sid=$newSid";
 
-          // Aapke StepsController ki demand: sid, stepNo, stepDescription, stepImg
-          request.fields['sid'] = newSid.toString();
-          request.fields['stepNo'] = (i + 1).toString();
-          request.fields['stepDescription'] = steps[i]['controller'].text;
+        final linkRes = await http.post(
+          Uri.parse(linkUrl),
+          headers: {"Content-Type": "application/json", ...headers},
+          body: jsonEncode({}), // Empty JSON body as iOS
+        );
 
-          if (steps[i]['image'] != null) {
-            File imgFile = steps[i]['image'];
-            request.files.add(await http.MultipartFile.fromPath(
-              'stepImg', // Controller mein yahi naam hai
-              imgFile.path,
-            ));
+        // Agar expert link successfully create ho jaye, tabhi steps upload karenge
+        if (linkRes.statusCode == 200 || linkRes.statusCode == 201) {
+
+          // ==========================================
+          // STEP 3: UPLOAD ALL STEPS SEQUENTIALLY
+          // ==========================================
+          for (int i = 0; i < steps.length; i++) {
+            final stepUrl = "${AppConstants.baseUrl}/steps/add";
+            var request = http.MultipartRequest('POST', Uri.parse(stepUrl));
+            request.headers.addAll(headers);
+
+            // Step details (sid, stepNo, stepDescription)
+            request.fields['sid'] = newSid.toString();
+            request.fields['stepNo'] = (i + 1).toString();
+            request.fields['stepDescription'] = steps[i]['controller'].text;
+
+            // Step Image
+            if (steps[i]['image'] != null) {
+              File imgFile = steps[i]['image'];
+              request.files.add(await http.MultipartFile.fromPath(
+                'stepImg', // Controller parameter name matching stepImg
+                imgFile.path,
+              ));
+            }
+
+            var streamedRes = await request.send();
+            var stepRes = await http.Response.fromStream(streamedRes);
+
+            if (stepRes.statusCode != 200 && stepRes.statusCode != 201) {
+              print("Step ${i + 1} failed to upload: ${stepRes.body}");
+              return false; // Agar koi ek step bhi fail hua to transactional flow break ho jaye
+            }
           }
 
-          var streamedRes = await request.send();
-          var stepRes = await http.Response.fromStream(streamedRes);
-
-          if (stepRes.statusCode != 200 && stepRes.statusCode != 201) {
-            print("Step ${i+1} failed: ${stepRes.body}");
-            return false; // Agar aik bhi step fail hua to ruk jayega
-          }
+          return true; // Core Solution created, Linked with Expert, and all Steps uploaded successfully!
+        } else {
+          print("Failed to link Expert ($expertId) with Solution ($newSid): ${linkRes.body}");
+          return false;
         }
-        return true; // Sab theek ho gaya
       }
+
+      print("Core Solution insertion failed with code: ${solRes.statusCode}");
       return false;
     } catch (e) {
       print("Main Upload Error: $e");
       return false;
     }
   }
-
 
   static Future<bool> addVehicle(Map<String, dynamic> carData) async {
     try {
@@ -178,6 +205,7 @@ class ApiService {
       return res.statusCode == 201 || res.statusCode == 200;
     } catch (e) { return false; }
   }
+
 
   // 2. Fetch Pending Requests (Jinka status 0 hai)
   static Future<List<dynamic>> fetchPendingVehicles() async {
@@ -711,6 +739,157 @@ class ApiService {
     } catch (e) {
       print("Error updating solution title: $e");
       return false;
+    }
+  }
+
+  // Active/Inactive toggle karne ke liye (Sama as iOS: disableexpert/{uid})
+  static Future<bool> disableExpert(int uid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/disableexpert/$uid";
+      final response = await http.put(Uri.parse(url), headers: headers);
+      return response.statusCode == 200;
+    } catch (e) {
+      print("Toggle Status Error: $e");
+      return false;
+    }
+  }
+//////////////////////////////////////////////////New
+  static Future<List<dynamic>> getAllSolutions() async {
+    try {
+      // 🚩 EXACT URL jo aapne chrome mein check kiya
+      final url = "${AppConstants.baseUrl}/expertsolutions";
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+
+        // Chrome response ke mutabiq 'assignments' key se data nikalna hai
+        if (data.containsKey('assignments') && data['assignments'] is List) {
+          print("Data mil gaya! Total: ${data['total']}");
+          return data['assignments'];
+        }
+      }
+      return [];
+    } catch (e) {
+      print("Fetch Error: $e");
+      return [];
+    }
+  }
+
+  // Sirf Admin ke liye alag function
+  static Future<List<dynamic>> fetchStepsForAdmin(int sid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/steps/$sid";
+      final res = await http.get(Uri.parse(url), headers: headers);
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        // Admin logic: steps key check karo
+        if (data is Map && data.containsKey('steps')) return data['steps'];
+        return data is List ? data : (data['\$values'] ?? []);
+      }
+      return [];
+    } catch (e) { return []; }
+  }
+
+  static Future<bool> approveSolution(int sid) async {
+    try {
+      final url = "${AppConstants.baseUrl}/users/approvesolution/$sid";
+      final response = await http.put(Uri.parse(url), headers: headers);
+      return response.statusCode == 200;
+    } catch (e) { return false; }
+  }
+
+// ApiService.dart ke andar ye naya function add karein
+  static String getAdminImageUrl(String? path) {
+    if (path == null || path.isEmpty) return "";
+
+    // Base URL se /api hatane wala logic (Sirf Admin/iOS ke liye)
+    String baseUrl = AppConstants.baseUrl;
+    if (baseUrl.endsWith("/api")) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+    } else if (baseUrl.endsWith("/api/")) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 5);
+    }
+
+    String cleanPath = path.replaceAll(r'\', '/');
+    if (!cleanPath.startsWith('/')) {
+      cleanPath = '/$cleanPath';
+    }
+
+    return baseUrl + cleanPath;
+  }
+
+  // --- DELETE STEP (iOS Synchronized Logic) ---
+  static Future<bool> deleteStep(int stepId) async {
+    try {
+      // Backend Route matching iOS: DELETE api/steps/{id}
+      final url = Uri.parse("${AppConstants.baseUrl}/steps/$stepId");
+
+      final response = await http.delete(
+        url,
+        headers: headers, // ngrok skip browser warning headers
+      );
+
+      print("Delete Step Status: ${response.statusCode}");
+
+      // Agar backend 200 (OK) ya 204 (No Content) return kare
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      print("Delete Step Error: $e");
+      return false;
+    }
+  }
+  // --- NEW: Expert Ranking for Admin (iOS Flow) ---
+  static Future<List<dynamic>> fetchExpertRankings() async {
+    try {
+      // Same iOS endpoint
+      final url = "${AppConstants.baseUrl}/users/getapprovedexperts";
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        var data = json.decode(response.body);
+        List<dynamic> experts = [];
+
+        if (data is List) {
+          experts = data;
+        } else if (data is Map && data.containsKey('\$values')) {
+          experts = data['\$values'];
+        }
+
+        // iOS Logic: Sorting by Overall Rating (Highest to Lowest)
+        experts.sort((a, b) {
+          double ratingA = double.tryParse(a['overallRating']?.toString() ?? '0') ?? 0.0;
+          double ratingB = double.tryParse(b['overallRating']?.toString() ?? '0') ?? 0.0;
+          return ratingB.compareTo(ratingA);
+        });
+
+        return experts;
+      }
+      return [];
+    } catch (e) {
+      print("Ranking API Error: $e");
+      return [];
+    }
+  }
+
+
+  // ApiService.dart mein niche ye add karein
+  static Future<Map<String, dynamic>?> fetchExpertPerformance(int uid) async {
+    try {
+      // Route exact yahi hona chahiye: users/ExpertPerformance
+      final url = "${AppConstants.baseUrl}/users/expertperformance/$uid";
+      print("DEBUG: API URL: $url");
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print("DEBUG: API Error Code: ${response.statusCode}");
+      return null;
+    } catch (e) {
+      return null;
     }
   }
 

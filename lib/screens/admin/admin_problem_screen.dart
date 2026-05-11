@@ -18,6 +18,7 @@ class _AdminProblemScreenState extends State<AdminProblemScreen> {
   bool showRejectReasons = false;
   List<dynamic> allProblems = [];
   bool isLoading = true;
+   
 
   String selectedType = "Electrical";
   TextEditingController titleController = TextEditingController();

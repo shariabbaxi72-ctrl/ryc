@@ -25,7 +25,8 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
   final TextEditingController _reviewController = TextEditingController();
   late Future<List<dynamic>> _stepsFuture;
   Future<List<dynamic>>? _reviewsFuture;
-  String? _enlargedImage; // Zoom ke liye
+  String? _enlargedImage;
+  bool _alreadyReviewed = false;
 
   @override
   void initState() {
@@ -36,9 +37,23 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
 
   Future<List<dynamic>> _fetchReviews() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      String currentUserName = prefs.getString('username') ?? ""; // Login user ka naam
+
       final url = "${AppConstants.baseUrl}/ratings/solution/${widget.sid}";
       final response = await http.get(Uri.parse(url));
-      return response.statusCode == 200 ? json.decode(response.body) : [];
+
+      if (response.statusCode == 200) {
+        List<dynamic> data = json.decode(response.body);
+
+        // 👇 CHECK: Kya is user ne pehle review diya hai?
+        setState(() {
+          _alreadyReviewed = data.any((rev) => rev['reviewerName'] == currentUserName);
+        });
+
+        return data;
+      }
+      return [];
     } catch (e) { return []; }
   }
 
@@ -75,9 +90,18 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
             Padding(
               padding: const EdgeInsets.all(20),
               child: ElevatedButton(
-                onPressed: () => _showRatingDialog(),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B2E4B), minimumSize: const Size(double.infinity, 50)),
-                child: const Text("Finish & Rate", style: TextStyle(color: Colors.white)),
+                onPressed: () {
+                  if (_alreadyReviewed) {
+                    // Agar pehle rating di hai, seedha finish kar do
+                    widget.onFinish();
+                  } else {
+                    // Agar nahi di, toh popup dikhao
+                    _showRatingDialog();
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B2E4B),
+                    minimumSize: const Size(double.infinity, 50)),
+                child: const Text("Finish", style: TextStyle(color: Colors.white)),
               ),
             ),
           ],

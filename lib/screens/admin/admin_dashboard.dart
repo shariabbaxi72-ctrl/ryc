@@ -5,6 +5,7 @@ import 'package:ryc/screens/admin/admin_problem_screen.dart';
 import 'package:ryc/screens/admin/admin_vehicle_screen.dart';
 
 import 'admin_expert_screen.dart';
+import 'admin_solutions_screen.dart';
 import 'admin_user_screen.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -95,6 +96,22 @@ class _AdminScreenState extends State<AdminScreen> {
                     const SizedBox(width: 20),
                     _buildMenuButton("Problem", () {
                       Navigator.push(context, MaterialPageRoute(builder: (context) => AdminProblemScreen(adminName: widget.adminName)));
+                    }),
+                  ],
+                ),
+                // Row 2 ke niche ye add karein:
+                const SizedBox(height: 20),
+
+// Row 3: Solutions Button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildMenuButton("Solutions", () {
+                      // Abhi humne screen nahi banayi, isliye screen banane ke baad navigation add karenge
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => AdminSolutionsScreen(adminName: widget.adminName))
+                      );
                     }),
                   ],
                 ),

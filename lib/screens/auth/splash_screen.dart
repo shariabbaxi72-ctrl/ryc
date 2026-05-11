@@ -42,7 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
             Text(
               "Welcome to Repair Your Car",
               style: TextStyle(
-                fontSize: 28,
+                fontSize: 26,
                 fontWeight: FontWeight.bold,
                 color: const Color.fromARGB(255, 98, 97, 97),
               ),
