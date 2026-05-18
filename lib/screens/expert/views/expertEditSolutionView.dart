@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -49,12 +50,10 @@ class _EditSolutionViewState extends State<EditSolutionView> {
 
       if (data != null) {
         setState(() {
-          // Backend keys check karein: 'stitle' ya 'title'
           _titleController.text = data['solution']?['stitle'] ?? data['solution']?['title'] ?? "";
           var apiSteps = data['steps'] as List? ?? [];
 
           steps = apiSteps.map((s) => StepEditModel(
-            // Backend labels: 'stepId' ya 'stepid'
             stepId: s['stepId'] ?? s['stepid'],
             stepNo: s['stepNo'] ?? s['stepno'] ?? 1,
             description: s['description'] ?? s['stepDescription'] ?? "",
@@ -69,26 +68,101 @@ class _EditSolutionViewState extends State<EditSolutionView> {
     }
   }
 
+  // --- Step Ratings View (Fix: Keys match iOS Logic) ---
+  // --- Step Ratings View (Stars Fixed) ---
+  void _showStepRatings(int stepId, int stepNo) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          height: MediaQuery.of(context).size.height * 0.6,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("Ratings for Step $stepNo", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close))
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: FutureBuilder<List<dynamic>>(
+                  future: ApiService.fetchStepRatings(stepId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Center(child: Text("No reviews for this step yet."));
+                    }
+                    return ListView.builder(
+                      itemCount: snapshot.data!.length,
+                      itemBuilder: (context, index) {
+                        var r = snapshot.data![index];
+
+                        // Keys handling
+                        String userName = (r['rname'] ?? r['userName'] ?? r['name'] ?? "User").toString();
+                        String reviewText = (r['sreview'] ?? r['review'] ?? r['comment'] ?? "No comment").toString();
+
+                        // Rating value ko double mein le rahay hain taake stars count kar sakein
+                        double ratingValue = double.tryParse((r['srating'] ?? r['rating'] ?? r['stars'] ?? "0").toString()) ?? 0;
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 1,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.blue.shade50,
+                              child: Text(userName.isNotEmpty ? userName[0].toUpperCase() : "U", style: const TextStyle(color: Colors.blue)),
+                            ),
+                            title: Text(userName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // 👇 Yahan Stars add kiye hain poore 5
+                                // Row(
+                                //   children: List.generate(5, (starIndex) {
+                                //     return Icon(
+                                //       starIndex < ratingValue ? Icons.star : Icons.star_border,
+                                //       color: Colors.amber,
+                                //       size: 16,
+                                //     );
+                                //   }),
+                                // ),
+                                const SizedBox(height: 4),
+                                Text(reviewText),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> deleteStepLogic(int index) async {
     var step = steps[index];
-
-    // Case 1: Agar step pehle se database mein hai (Purana Step)
     if (step.stepId != null && step.stepId != 0) {
       setState(() => isLoading = true);
-
       bool success = await ApiService.deleteStep(step.stepId!);
-
       if (success) {
         _removeAndReorderUI(index);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Step deleted from server")));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to delete step")));
       }
-
       setState(() => isLoading = false);
-    }
-    // Case 2: Agar naya add kiya hua step hai (Abhi save nahi hua)
-    else {
+    } else {
       _removeAndReorderUI(index);
     }
   }
@@ -96,68 +170,34 @@ class _EditSolutionViewState extends State<EditSolutionView> {
   void _removeAndReorderUI(int index) {
     setState(() {
       steps.removeAt(index);
-      // iOS ki tarah numbering reset karein
       for (int i = 0; i < steps.length; i++) {
         steps[i].stepNo = i + 1;
       }
     });
   }
-  // --- MAIN UPDATE FUNCTION (SMART LOGIC) ---
+
   Future<void> updateEverything() async {
-    if (_titleController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Title is required")));
-      return;
-    }
-
+    if (_titleController.text.isEmpty) return;
     setState(() => isUpdating = true);
-
     try {
-      // 1. Update Title (Backend API call)
       await ApiService.updateSolutionTitle(widget.sidToEdit, _titleController.text);
-
-      // 2. Loop through steps
       for (int i = 0; i < steps.length; i++) {
         var step = steps[i];
-
         if (step.stepId != null && step.stepId != 0) {
-          // --- CASE A: PURANA STEP UPDATE ---
-
           if (step.newImageFile != null) {
-            // Expert ne Image badli hai (Yahi call description bhi update kar degi)
-            await ApiService.updateStepImage(
-              step.stepId!,
-              step.newImageFile!,
-              description: step.descriptionController.text,
-              stepNo: i + 1,
-            );
+            await ApiService.updateStepImage(step.stepId!, step.newImageFile!, description: step.descriptionController.text, stepNo: i + 1);
           } else {
-            // Expert ne sirf description badli hai
-            await ApiService.updateStep(
-              stepId: step.stepId!,
-              description: step.descriptionController.text,
-              stepNo: i + 1,
-            );
+            await ApiService.updateStep(stepId: step.stepId!, description: step.descriptionController.text, stepNo: i + 1);
           }
         } else {
-          // --- CASE B: NAYA STEP ADD (If Expert added a new step card) ---
           if (step.newImageFile != null) {
-            await ApiService.uploadNewStep(
-              sid: widget.sidToEdit,
-              stepNo: i + 1,
-              description: step.descriptionController.text,
-              imageFile: step.newImageFile!,
-            );
+            await ApiService.uploadNewStep(sid: widget.sidToEdit, stepNo: i + 1, description: step.descriptionController.text, imageFile: step.newImageFile!);
           }
         }
       }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Solution updated successfully!")));
-        Navigator.pop(context, true); // Dashboard ko batao ke refresh kare
-      }
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      debugPrint("Update Error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Something went wrong during update")));
+      debugPrint("Error: $e");
     } finally {
       if (mounted) setState(() => isUpdating = false);
     }
@@ -168,106 +208,48 @@ class _EditSolutionViewState extends State<EditSolutionView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Edit Solution"),
-        backgroundColor: Colors.blueAccent,
+        backgroundColor: const Color(0xFF1B2E4B),
         foregroundColor: Colors.white,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: CircleAvatar(
-              backgroundColor: Colors.white,
-              backgroundImage: (expertImgUrl.isNotEmpty)
-                  ? NetworkImage(ApiService.getFullImageUrl(expertImgUrl))
-                  : null,
-              child: expertImgUrl.isEmpty ? const Icon(Icons.person, color: Colors.blue) : null,
-            ),
-          )
-        ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+      body: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: "Solution Title",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.title),
-              ),
-            ),
+            TextField(controller: _titleController, decoration: const InputDecoration(labelText: "Title")),
             const SizedBox(height: 20),
-
-            // Steps List Rendering
             ...steps.asMap().entries.map((entry) {
               int index = entry.key;
               StepEditModel step = entry.value;
               return Card(
-                elevation: 3,
-                margin: const EdgeInsets.only(bottom: 20),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                margin: const EdgeInsets.only(bottom: 15),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text("STEP ${index + 1}",
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red),
-                            onPressed: () => deleteStepLogic(index), // Naya function call karein
-                          )
+                          Text("STEP ${index + 1}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          // Row(
+                          //   children: [
+                          //     if (step.stepId != null && step.stepId != 0)
+                          //       IconButton(icon: const Icon(Icons.star_border, color: Colors.blue), onPressed: () => _showStepRatings(step.stepId!, index + 1)),
+                          //     IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => deleteStepLogic(index)),
+                          //   ],
+                          // )
                         ],
                       ),
+                      TextField(controller: step.descriptionController),
                       const SizedBox(height: 10),
-                      TextField(
-                        controller: step.descriptionController,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          hintText: "What to do in this step?",
-                          border: UnderlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 15),
-
-                      // Step Image UI
                       GestureDetector(
                         onTap: () async {
                           final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-                          if (picked != null) {
-                            setState(() => step.newImageFile = File(picked.path));
-                          }
+                          if (picked != null) setState(() => step.newImageFile = File(picked.path));
                         },
                         child: Container(
-                          height: 180,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[300]!),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: step.newImageFile != null
-                                ? Image.file(step.newImageFile!, fit: BoxFit.cover)
-                                : (step.existingImageUrl != null && step.existingImageUrl!.isNotEmpty
-                                ? Image.network(
-                              ApiService.getFullImageUrl(step.existingImageUrl),
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) => const Center(child: Icon(Icons.broken_image)),
-                            )
-                                : const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.add_a_photo, size: 40, color: Colors.grey),
-                                Text("Change Image", style: TextStyle(color: Colors.grey)),
-                              ],
-                            )),
-                          ),
+                          height: 150, width: double.infinity, color: Colors.grey[200],
+                          child: step.newImageFile != null ? Image.file(step.newImageFile!, fit: BoxFit.cover) :
+                          (step.existingImageUrl != null ? Image.network(ApiService.getFullImageUrl(step.existingImageUrl!), fit: BoxFit.cover) : const Icon(Icons.add_a_photo)),
                         ),
                       ),
                     ],
@@ -275,36 +257,11 @@ class _EditSolutionViewState extends State<EditSolutionView> {
                 ),
               );
             }).toList(),
-
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () {
-                setState(() {
-                  steps.add(StepEditModel(stepNo: steps.length + 1, description: ""));
-                });
-              },
-              icon: const Icon(Icons.add),
-              label: const Text("ADD ANOTHER STEP"),
-            ),
-            const SizedBox(height: 30),
-
-            ElevatedButton(
-              onPressed: isUpdating ? null : updateEverything,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 55),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                backgroundColor: Colors.blueAccent,
-              ),
-              child: isUpdating
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("SAVE ALL CHANGES",
-                  style: TextStyle(color: Colors.greenAccent, fontSize: 16, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 40),
+            TextButton(onPressed: () => setState(() => steps.add(StepEditModel(stepNo: steps.length + 1, description: ""))), child: const Text("ADD STEP")),
+            ElevatedButton(onPressed: isUpdating ? null : updateEverything, child: const Text("SAVE CHANGES")),
           ],
         ),
       ),
     );
-
   }
 }

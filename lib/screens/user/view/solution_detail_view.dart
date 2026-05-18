@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:ryc/services/api_service.dart';
 import 'package:ryc/utils/constants.dart';
@@ -27,30 +28,43 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
   Future<List<dynamic>>? _reviewsFuture;
   String? _enlargedImage;
   bool _alreadyReviewed = false;
+  int? _currentUid;
+
 
   @override
   void initState() {
     super.initState();
+
+    _loadUserId();
+
+
     _stepsFuture = ApiService.fetchStepsBySolutionId(widget.sid);
     _reviewsFuture = _fetchReviews();
   }
 
+
+  void _loadUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUid = prefs.getInt('userId');
+    });
+  }
+
+
+
   Future<List<dynamic>> _fetchReviews() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      String currentUserName = prefs.getString('username') ?? ""; // Login user ka naam
+      String currentUserName = prefs.getString('username') ?? "";
 
       final url = "${AppConstants.baseUrl}/ratings/solution/${widget.sid}";
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url), headers: {"ngrok-skip-browser-warning": "69420"});
 
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
-
-        // 👇 CHECK: Kya is user ne pehle review diya hai?
         setState(() {
           _alreadyReviewed = data.any((rev) => rev['reviewerName'] == currentUserName);
         });
-
         return data;
       }
       return [];
@@ -72,10 +86,18 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
                     future: _stepsFuture,
                     builder: (context, snap) {
                       if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-                      return Column(children: snap.data!.map((s) => _stepCard(s)).toList());
+                      return Column(
+                        children: snap.data!.map((s) => StepRatingCard(
+                          step: s,
+                          sid: widget.sid,
+                          uid: _currentUid,
+                          onZoom: (url) => setState(() => _enlargedImage = url),
+                        )).toList(),
+                      );
                     },
                   ),
                   const Text("User Reviews", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
                   FutureBuilder<List<dynamic>>(
                     future: _reviewsFuture,
                     builder: (context, rev) {
@@ -92,10 +114,8 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
               child: ElevatedButton(
                 onPressed: () {
                   if (_alreadyReviewed) {
-                    // Agar pehle rating di hai, seedha finish kar do
                     widget.onFinish();
                   } else {
-                    // Agar nahi di, toh popup dikhao
                     _showRatingDialog();
                   }
                 },
@@ -106,7 +126,6 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
             ),
           ],
         ),
-        // Image Zoom Overlay
         if (_enlargedImage != null) _zoomOverlay(),
       ],
     );
@@ -115,43 +134,18 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
   Widget _headerSection() => Container(
     margin: const EdgeInsets.all(20),
     padding: const EdgeInsets.all(15),
-    decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(15)
-    ),
+    decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(15)),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Vehicle: ${widget.selectedCar ?? 'N/A'}",
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text("Vehicle: ${widget.selectedCar ?? 'N/A'}", style: const TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 5),
-        // Yahan Problem add kiya hai
-        Text("Problem: ${widget.selectedProblem ?? 'N/A'}",
-            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey)),
+        Text("Problem: ${widget.selectedProblem ?? 'N/A'}", style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey)),
         const SizedBox(height: 5),
-        Text("Expert: ${widget.expertName ?? 'N/A'}",
-            style: const TextStyle(color: Colors.grey)),
+        Text("Expert: ${widget.expertName ?? 'N/A'}", style: const TextStyle(color: Colors.grey)),
       ],
     ),
   );
-
-  Widget _stepCard(dynamic step) {
-    String url = "${AppConstants.baseUrl.replaceFirst('/api', '')}/${step['image'] ?? ''}";
-    return Container(
-      margin: const EdgeInsets.only(bottom: 15), padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey.shade200)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text("Step ${step['stepNo']}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-        const SizedBox(height: 8),
-        Text(step['description'] ?? ""),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => setState(() => _enlargedImage = url),
-          child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(url, height: 160, width: double.infinity, fit: BoxFit.cover)),
-        ),
-      ]),
-    );
-  }
 
   Widget _zoomOverlay() => GestureDetector(
     onTap: () => setState(() => _enlargedImage = null),
@@ -183,13 +177,10 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B2E4B)),
             onPressed: () async {
               if (_userRating > 0) {
-                // Rating submit hone ka wait karo
                 await _submitRating();
-                // Submit hone ke baad hi screen band karo
                 Navigator.pop(context);
                 widget.onFinish();
               } else {
-                // Agar rating nahi di, to sirf skip
                 Navigator.pop(context);
                 widget.onFinish();
               }
@@ -202,31 +193,166 @@ class _SolutionDetailViewState extends State<SolutionDetailView> {
 
   Future<void> _submitRating() async {
     try {
-      int uid = (await SharedPreferences.getInstance()).getInt('userId') ?? 0;
-
-      // Yahan URL check karo. Agar baseUrl mein '/api' pehle se hai,
-      // to yahan '/ratings' likho. Agar nahi hai, to '/api/ratings' likho.
-      final url = "${AppConstants.baseUrl.replaceAll('/api', '')}/api/ratings";
-
-      final response = await http.post(
+      final url = "${AppConstants.baseUrl}/ratings";
+      await http.post(
           Uri.parse(url),
-          headers: {"Content-Type": "application/json"},
+          headers: {"Content-Type": "application/json", "ngrok-skip-browser-warning": "69420"},
           body: json.encode({
-            "uid": uid,
+            "uid": _currentUid,
             "sid": widget.sid,
             "rating": _userRating,
             "review": _reviewController.text
           })
       );
+    } catch (e) { debugPrint("Rating Submit Error: $e"); }
+  }
+}
 
-      debugPrint("Status Code: ${response.statusCode}");
-      debugPrint("Response Body: ${response.body}");
+class StepRatingCard extends StatefulWidget {
+  final dynamic step;
+  final int sid;
+  final int? uid;
+  final Function(String) onZoom;
 
-      if (response.statusCode != 201 && response.statusCode != 200) {
-        throw Exception("Server Error: ${response.statusCode}");
+  const StepRatingCard({super.key, required this.step, required this.sid, required this.uid, required this.onZoom});
+
+  @override
+  State<StepRatingCard> createState() => _StepRatingCardState();
+}
+
+class _StepRatingCardState extends State<StepRatingCard> {
+  bool _showInput = false;
+  int _sRating = 0;
+  final TextEditingController _sReview = TextEditingController();
+  bool _isSubmitted = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    if (widget.uid == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+
+      final prefs = await SharedPreferences.getInstance();
+      String currentUserName = prefs.getString('username') ?? "";
+
+      final stepId = widget.step['stepId'] ?? widget.step['id'];
+      final url = "${AppConstants.baseUrl}/stepfeedback/get/$stepId";
+
+      final res = await http.get(
+          Uri.parse(url),
+          headers: {"ngrok-skip-browser-warning": "69420"}
+      );
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final List ratings = data['ratings'] ?? [];
+
+        setState(() {
+
+          _isSubmitted = ratings.any((r) {
+
+            bool nameMatch = r['rname']?.toString().toLowerCase() == currentUserName.toLowerCase();
+
+
+            bool idMatch = r['uid']?.toString() == widget.uid.toString() ||
+                r['userId']?.toString() == widget.uid.toString();
+
+            return nameMatch || idMatch;
+          });
+        });
       }
     } catch (e) {
-      debugPrint("Rating Submit Error: $e");
+      debugPrint("Status Check Error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  Future<void> _submitStepFeedback() async {
+    if (_sRating == 0) return;
+    try {
+      final url = "${AppConstants.baseUrl}/stepfeedback/add";
+      final res = await http.post(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json", "ngrok-skip-browser-warning": "69420"},
+        body: json.encode({
+          "stepid": widget.step['stepId'] ?? widget.step['id'],
+          "sid": widget.sid,
+          "uid": widget.uid,
+          "srating": _sRating,
+          "sreview": _sReview.text.trim()
+        }),
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        setState(() { _isSubmitted = true; _showInput = false; });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Step feedback sent!")));
+      }
+    } catch (e) { debugPrint("Submit Step Error: $e"); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String url = "${AppConstants.baseUrl.replaceFirst('/api', '')}/${widget.step['image'] ?? ''}";
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey.shade200)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Step ${widget.step['stepNo']}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+            if (!_isLoading) InkWell(
+              onTap: () => _isSubmitted ? null : setState(() => _showInput = !_showInput),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: _isSubmitted ? Colors.green.shade50 : Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                child: Row(children: [
+                  Icon(_isSubmitted ? Icons.check_circle : Icons.star_outline, size: 16, color: _isSubmitted ? Colors.green : Colors.blue),
+                  const SizedBox(width: 4),
+                  Text(_isSubmitted ? "Submitted" : "Rate Step", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _isSubmitted ? Colors.green : Colors.blue)),
+                ]),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(widget.step['description'] ?? ""),
+        const SizedBox(height: 12),
+        if (widget.step['image'] != null) GestureDetector(
+          onTap: () => widget.onZoom(url),
+          child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(url, height: 160, width: double.infinity, fit: BoxFit.cover)),
+        ),
+        if (_showInput && !_isSubmitted) ...[
+          const SizedBox(height: 15),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(5, (i) => GestureDetector(onTap: () => setState(() => _sRating = i + 1), child: Icon(_sRating > i ? Icons.star : Icons.star_border, color: Colors.amber, size: 30)))),
+              const SizedBox(height: 10),
+              TextField(controller: _sReview, decoration: const InputDecoration(hintText: "Step review (optional)", border: OutlineInputBorder(), contentPadding: EdgeInsets.all(8))),
+              const SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: _sRating > 0 ? _submitStepFeedback : null,
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B2E4B), minimumSize: const Size(double.infinity, 40)),
+                child: const Text("SUBMIT FEEDBACK", style: TextStyle(color: Colors.white, fontSize: 12)),
+              )
+            ]),
+          )
+        ]
+      ]),
+    );
   }
 }

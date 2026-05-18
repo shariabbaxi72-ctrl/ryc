@@ -268,17 +268,17 @@ class _MyVehiclesViewState extends State<MyVehiclesView> {
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               title: Text(
-                "${car['make'] ?? car['Make']} ${car['model'] ?? car['Model']} ${car['year'] ?? car['Year']}",
+                "${car['make'] ?? car['Make']} ${car['model'] ?? car['Model']} ${car['variant'] ?? car['Variant'] ?? ''} ${car['year'] ?? car['Year']}",
                 style: TextStyle(fontWeight: isDef ? FontWeight.bold : FontWeight.w500),
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isDef)
-                    const Text("Default", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
-                  if (!isDef) // 🚩 iOS Style Delete Button
+                    const Text("Default", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                  if (!isDef)
                     IconButton(
-                      icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 22),
+                      icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 25),
                       onPressed: () => hideVehiclePermanently(vid),
                     ),
                 ],

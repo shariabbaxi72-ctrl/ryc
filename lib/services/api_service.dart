@@ -894,6 +894,140 @@ class ApiService {
   }
 
 
+// 1. Gaariyon ki list lane ke liye (Filter Dropdown)
+  static Future<List<String>> fetchAvailableMakes() async {
+    try {
+      final url = "${AppConstants.baseUrl}/vehicles/make";
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        List<String> makes = List<String>.from(jsonResponse['makes'] ?? []);
+        makes.sort();
+        return ["All", ...makes]; // "All" ka option khud add kiya
+      }
+      return ["All"];
+    } catch (e) {
+      return ["All"];
+    }
+  }
+////////////////////////////smmj yh
+// 2. Dashboard ka main data (Solutions + Brand Score)
+  static Future<Map<String, dynamic>?> fetchExpertDashboardData(int eid, String make) async {
+    try {
+      // 🔥 Make parameter URL mein pass ho raha hai
+      final url = "${AppConstants.baseUrl}/expertsolutions/expert/$eid?make=$make";
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body); // Poora object return hoga (solutions aur filteredOverallRating)
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+// --- Admin Dashboard Counts (iOS Synchronized) ---
+  static Future<Map<String, int>> fetchAdminDashboardCounts() async {
+    try {
+      // Backend Endpoint: api/users/admin/counts
+      final url = "${AppConstants.baseUrl}/users/admin/counts";
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> decodedData = json.decode(response.body);
+
+        // Map<String, dynamic> ko Map<String, int> mein convert kar rahe hain
+        return decodedData.map((key, value) => MapEntry(key, int.tryParse(value.toString()) ?? 0));
+      }
+      return {}; // Error ki surat mein empty map
+    } catch (e) {
+      print("Counts Fetch Error: $e");
+      return {};
+    }
+  }
+
+  // 1. Check karna ke user ne is step ko pehle rate kiya hai ya nahi
+  // Route: api/stepfeedback/get/{stepid}
+  static Future<List<dynamic>> getStepFeedback(int stepId) async {
+    try {
+      final url = "${AppConstants.baseUrl}/stepfeedback/get/$stepId";
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['ratings'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // 2. Step ki rating submit karna (Native wala logic)
+  // Route: api/stepfeedback/add
+  static Future<bool> submitStepFeedback({
+    required int stepId,
+    required int sid,
+    required int uid,
+    required int rating,
+    required String review,
+  }) async {
+    try {
+      final url = "${AppConstants.baseUrl}/stepfeedback/add";
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json", ...headers},
+        body: json.encode({
+          "stepid": stepId,
+          "sid": sid,
+          "uid": uid,
+          "srating": rating,
+          "sreview": review.trim()
+        }),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      return false;
+    }
+  }
+
+
+
+  static Future<List<dynamic>> fetchStepRatings(int stepId) async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AppConstants.baseUrl}/stepfeedback/get/$stepId"),
+        headers: {"ngrok-skip-browser-warning": "69420"},
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['ratings'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // --- NEW: Vehicle ki Rating base par Top Problem lana (iOS Synchronized) ---
+  static Future<String?> fetchTopRatedProblem(int vid) async {
+    try {
+      // Exact iOS endpoint: expertsolutions/vehicle/{vid}/top-rated-problem
+      final url = "${AppConstants.baseUrl}/expertsolutions/vehicle/$vid/top-rated-problem";
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        // Backend se 'problemTitle' key mein data aa raha hai
+        return data['problemTitle'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print("Error fetching top rated problem: $e");
+      return null;
+    }
+  }
 
   }
 

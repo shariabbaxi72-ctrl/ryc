@@ -4,6 +4,7 @@ import '../../../services/api_service.dart';
 
 class ExpertAddCarView extends StatefulWidget {
   final bool isAdmin;
+
   final Function() onCarAdded;
 
   const ExpertAddCarView({super.key, required this.isAdmin, required this.onCarAdded});

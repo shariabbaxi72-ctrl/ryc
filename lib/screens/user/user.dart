@@ -3,6 +3,7 @@ import 'package:ryc/screens/user/view/add_car_view.dart';
 import 'package:ryc/screens/user/view/profile_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ryc/services/api_service.dart';
+import '../expert/views/expert_add_car_view.dart';
 import 'view/dashboard_view.dart';
 import 'view/my_vehicles_view.dart';
 import 'view/expert_solutions_view.dart';
@@ -205,6 +206,11 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
               setState(() => _currentView = 2);
               Navigator.pop(context);
             }),
+
+            // _drawerTile(Icons.add_circle_outline, "Add New Car", () {
+            //   setState(() => _currentView = 6); // Naya view number
+            //   Navigator.pop(context);
+            // }),
             const Spacer(),
             _drawerTile(Icons.logout, "Logout", _showLogoutDialog),
             const SizedBox(height: 20),
@@ -216,12 +222,12 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
   }
 
   String _getTitle() {
-    if (_currentView == 0) return "Welcome\n $userName";
+    //if (_currentView == 0) return "Welcome\n $userName";
     if (_currentView == 1) return "My Vehicles";
     if (_currentView == 2) return "Choose Car";
-    if (_currentView == 3) return "Expert Solutions";
-    if (_currentView == 5) return "My Profile"; // <--- YE ADD KAREIN
-    return "Solution Detail";
+    //if (_currentView == 3) return "Expert Solutions";
+   // if (_currentView == 5) return "My Profile"; // <--- YE ADD KAREIN
+    return "Welcome \n $userName";
   }
 
 
@@ -298,11 +304,21 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
           onUpdateSuccess: refreshAllData, // Profile update ho to dashboard refresh ho jaye
         );
 
+      case 6:
+        return ExpertAddCarView(
+          isAdmin: false, // Is se status 'pending' jaye ga aur button 'Send Request' dikhaye ga
+          onCarAdded: () {
+            setState(() => _currentView = 0); // Wapis dashboard pe
+            refreshAllData(); // List update karne ke liye
+          },
+        );
+
       default: return DashboardView(
         myCars: myCars,
         allProblems: allProblems, // Yahan wo list bhej di
         selectedCar: selectedCar,
         selectedProblem: selectedProblem,
+        userName: userName,
         onCarChanged: (v) => setState(() => selectedCar = v),
         onProblemChanged: (v) => setState(() => selectedProblem = v),
         onRefresh: refreshAllData,

@@ -37,9 +37,9 @@ class _ExpertProfileViewState extends State<ExpertProfileView> {
   }
 
   Future<void> _loadProfileData() async {
-
     setState(() => isLoading = true);
 
+    // 1. Pehle data fetch karo
     var profile = await ApiService.getExpertProfile();
 
     if (mounted) {
@@ -47,13 +47,14 @@ class _ExpertProfileViewState extends State<ExpertProfileView> {
         if (profile != null) {
           userController.text = profile['username'] ?? "";
           imgUrl = profile['upicture'];
-          String cat = profile['category'] ?? "Electrical";
-          isMechanical = (cat == "Mechanical");
-          isElectrical = !isMechanical;
+
+          // 2. AB YAHAN YE LOGIC RAKHO (Profile milne ke baad)
+          String cat = profile['category'] ?? "";
+          isElectrical = cat.contains("Electrical");
+          isMechanical = cat.contains("Mechanical");
         }
         isLoading = false;
       });
-
     }
   }
 
@@ -69,14 +70,24 @@ class _ExpertProfileViewState extends State<ExpertProfileView> {
     }
 
     setState(() => isLoading = true);
+    String selectedCategory = "";
+    if (isElectrical && isMechanical) {
+      selectedCategory = "Electrical/Mechanical";
+    } else if (isElectrical) {
+      selectedCategory = "Electrical";
+    } else if (isMechanical) {
+      selectedCategory = "Mechanical";
+    } else {
+      selectedCategory = "General"; // Agar koi select na ho
+    }
 
     Map<String, dynamic> data = {
       "username": userController.text,
       "oldPass": oldPassController.text,
       "newPass": newPassController.text,
-      "category": isElectrical ? "Electrical" : "Mechanical",
+      "category": selectedCategory,
     };
-
+    print("DEBUG: Sending Category: $selectedCategory"); // Check karein yahan kya print ho raha hai
     bool success = await ApiService.updateExpertProfile(data, _image);
 
     if (mounted) {
@@ -159,9 +170,16 @@ class _ExpertProfileViewState extends State<ExpertProfileView> {
             const Text("Select Category:", style: TextStyle(fontWeight: FontWeight.bold)),
             Row(
               children: [
-                Radio<bool>(value: true, groupValue: isElectrical, onChanged: (v) => setState(() { isElectrical = true; isMechanical = false; })),
+                Checkbox(
+                  value: isElectrical,
+                  onChanged: (v) => setState(() => isElectrical = v!),
+                ),
                 const Text("Electrical"),
-                Radio<bool>(value: false, groupValue: isElectrical, onChanged: (v) => setState(() { isElectrical = false; isMechanical = true; })),
+                const SizedBox(width: 20),
+                Checkbox(
+                  value: isMechanical,
+                  onChanged: (v) => setState(() => isMechanical = v!),
+                ),
                 const Text("Mechanical"),
               ],
             ),

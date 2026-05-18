@@ -126,14 +126,14 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
               title: const Text("Add New Car"),
               onTap: () { setState(() => currentScreen = 2); Navigator.pop(context); }
           ),
-          /*ListTile(
+          ListTile(
               leading: const Icon(Icons.report_problem),
               title: const Text("Add Problem"),
               onTap: () {
                 setState(() => currentScreen = 4);
                 Navigator.pop(context);
               }
-          ),*/
+          ),
           const Spacer(),
 
           ListTile(

@@ -6,6 +6,7 @@ import 'EditProblemScreen.dart';
 class AdminProblemScreen extends StatefulWidget {
   final String adminName;
   final bool isAdmin;
+
   const AdminProblemScreen({super.key, required this.adminName, this.isAdmin = true});
 
   @override
@@ -18,6 +19,7 @@ class _AdminProblemScreenState extends State<AdminProblemScreen> {
   bool showRejectReasons = false;
   List<dynamic> allProblems = [];
   bool isLoading = true;
+
    
 
   String selectedType = "Electrical";

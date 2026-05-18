@@ -504,7 +504,7 @@ class _AdminExpertScreenState extends State<AdminExpertScreen> {
     return Container(
       decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
       child: Row(
-        children: [_myTab("Approved"), _myTab("Pending"), _myTab("Add"),_myTab("Ranking")],
+        children: [_myTab("Approved"), _myTab("Pending"), _myTab("Add")],
       ),
     );
   }
