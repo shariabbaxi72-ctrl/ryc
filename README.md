@@ -56,3 +56,47 @@ lib/
     │   └── login_screen.dart# Secured validation login view
     └── expert/
         └── expert_dashboard_view.dart # Solution management console for Experts
+
+⚙️ Setup and Installation
+Prerequisites
+Before running the mobile application, ensure you have the following installed:
+
+Flutter SDK (Latest Stable Version)
+
+Android Studio or VS Code
+
+An Android Emulator or a Physical Device with USB Debugging enable
+
+
+Step-by-Step Execution
+Clone the Repository:
+
+Bash
+git clone [https://github.com/your-username/repair-your-car-flutter.git](https://github.com/your-username/repair-your-car-flutter.git)
+cd repair-your-car-flutter
+
+Clean Cache & Install Dependencies:
+
+Bash
+flutter clean
+flutter pub get
+
+
+class AppConstants {
+  static const String baseUrl = "http://192.168.18.52/RyC/api";
+  // ... individual endpoints
+}
+
+"http://192.168.18.52/RyC/api";
+🎓 Academic Context
+Degree: Bachelor of Science in Computer Science (BSCS)
+
+Institute: Barani Institute of Information Technology (BIIT)
+
+Affiliation: PMAS Arid Agriculture University, Rawalpindi
+
+📜 Disclaimer
+This system is developed strictly for academic demonstration and system evaluation purposes at BIIT. All data endpoints, controller logic, and schemas are strictly configured to support the predefined project boundaries.
+
+
+
