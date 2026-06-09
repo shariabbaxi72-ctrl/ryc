@@ -296,15 +296,15 @@ class _AdminScreenState extends State<AdminScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Row 3: Solutions
-                  // Row(
-                  //   mainAxisAlignment: MainAxisAlignment.center,
-                  //   children: [
-                  //     _buildMenuButton("Solutions", () {
-                  //       Navigator.push(context, MaterialPageRoute(builder: (context) => AdminSolutionsScreen(adminName: widget.adminName))).then((_) => loadCounts());
-                  //     }),
-                  //   ],
-                  // ),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildMenuButton("Solutions", () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => AdminSolutionsScreen(adminName: widget.adminName))).then((_) => loadCounts());
+                      }),
+                    ],
+                  ),
 
                   const SizedBox(height: 50),
 
